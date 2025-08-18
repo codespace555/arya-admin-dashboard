@@ -9,6 +9,7 @@ import {
   FaSpinner,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import { LuMapPinned } from "react-icons/lu";
 
 const UsersList = () => {
   const [users, setUsers] = useState([]);
@@ -94,8 +95,8 @@ const UsersList = () => {
                 </h2>
                 <div className="space-y-2 text-gray-600 mb-4">
                   <p className="flex items-center gap-2">
-                    <FaEnvelope className="text-gray-400" />
-                    {user.email}
+                    <LuMapPinned className="text-gray-400" />
+                    {user.address}
                   </p>
                   <p className="flex items-center gap-2">
                     <FaPhone className="text-gray-400" />
