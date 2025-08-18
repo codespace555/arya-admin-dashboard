@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, orderBy, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase/config'; // Make sure this path is correct
+import { db } from '../firebase/config';
+import { format, getISOWeek } from 'date-fns';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // --- SVG Icon Components ---
 const TotalOrdersIcon = () => <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
@@ -63,6 +65,10 @@ export default function Dashboard() {
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
+    // --- New State for Chart Data and Active Graph ---
+    const [activeGraph, setActiveGraph] = useState('daily');
+    const [chartData, setChartData] = useState([]);
+
     useEffect(() => {
         const fetchDashboardData = async () => {
             setLoading(true);
@@ -84,11 +90,11 @@ export default function Dashboard() {
                 const totalOrders = ordersData.length;
                 const totalRevenue = ordersData.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
                 const pendingDeliveries = ordersData.filter(order => order.status?.toLowerCase() !== 'delivered').length;
-                
+
                 const now = new Date();
                 const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-                
+
                 const weekStart = new Date(todayStart);
                 weekStart.setDate(todayStart.getDate() - todayStart.getDay());
                 const weekEnd = new Date(weekStart);
@@ -106,7 +112,7 @@ export default function Dashboard() {
                     thisMonthDeliveries: ordersData.filter(o => o.deliveryDate?.toDate() >= monthStart && o.deliveryDate?.toDate() <= monthEnd).length,
                     upcoming: ordersData.filter(o => o.deliveryDate?.toDate() > todayEnd).length,
                 };
-                
+
                 setTabCounts(counts);
                 setStats({ totalOrders, totalRevenue, pendingDeliveries, todaysOrdersCount: counts.todaysOrders });
 
@@ -120,6 +126,81 @@ export default function Dashboard() {
         fetchDashboardData();
     }, []);
 
+    // --- Data Processing for Charts ---
+    useEffect(() => {
+        if (allOrders.length === 0) {
+            setChartData([]);
+            return;
+        }
+
+        const now = new Date();
+        const ordersWithDate = allOrders.map(order => ({
+            ...order,
+            orderedAtDate: order.orderedAt?.toDate()
+        })).filter(order => order.orderedAtDate);
+
+        let data = [];
+        switch (activeGraph) {
+            case 'daily': {
+                const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const dailyCounts = {};
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date(todayStart);
+                    date.setDate(todayStart.getDate() - i);
+                    dailyCounts[format(date, 'MMM d')] = 0;
+                }
+                ordersWithDate.forEach(order => {
+                    const dateKey = format(order.orderedAtDate, 'MMM d');
+                    if (Object.prototype.hasOwnProperty.call(dailyCounts, dateKey)) {
+                        dailyCounts[dateKey]++;
+                    }
+                });
+                data = Object.keys(dailyCounts).map(key => ({
+                    name: format(new Date(key), 'E'),
+                    orders: dailyCounts[key]
+                }));
+                break;
+            }
+            case 'weekly': {
+                const weeklyCounts = {};
+                ordersWithDate.forEach(order => {
+                    const week = getISOWeek(order.orderedAtDate);
+                    const year = order.orderedAtDate.getFullYear();
+                    const weekKey = `${year}-W${week}`;
+                    weeklyCounts[weekKey] = (weeklyCounts[weekKey] || 0) + 1;
+                });
+                data = Object.keys(weeklyCounts)
+                    .sort()
+                    .slice(-4) // Show last 4 weeks
+                    .map(key => ({
+                        name: `Week ${getISOWeek(new Date(key.split('-')[0], 0, 1 + ((key.split('-')[1].substring(1) - 1) * 7)))}`,
+                        orders: weeklyCounts[key]
+                    }));
+                break;
+            }
+            case 'monthly': {
+                const monthlyCounts = {};
+                ordersWithDate.forEach(order => {
+                    const monthKey = format(order.orderedAtDate, 'MMM-yyyy');
+                    monthlyCounts[monthKey] = (monthlyCounts[monthKey] || 0) + 1;
+                });
+                data = Object.keys(monthlyCounts)
+                    .sort()
+                    .slice(-6) // Show last 6 months
+                    .map(key => ({
+                        name: key.split('-')[0],
+                        orders: monthlyCounts[key]
+                    }));
+                break;
+            }
+            default:
+                data = [];
+        }
+        setChartData(data);
+
+    }, [activeGraph, allOrders]);
+
+    // --- Order Filtering for Table ---
     useEffect(() => {
         const filterOrders = () => {
             const now = new Date();
@@ -134,19 +215,23 @@ export default function Dashboard() {
                     setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() >= todayStart && o.deliveryDate?.toDate() <= todayEnd));
                     break;
                 case 'thisWeekDeliveries':
-                    { const weekStart = new Date(todayStart);
-                    weekStart.setDate(todayStart.getDate() - todayStart.getDay());
-                    const weekEnd = new Date(weekStart);
-                    weekEnd.setDate(weekStart.getDate() + 6);
-                    weekEnd.setHours(23, 59, 59, 999);
-                    setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() >= weekStart && o.deliveryDate?.toDate() <= weekEnd));
-                    break; }
+                    {
+                        const weekStart = new Date(todayStart);
+                        weekStart.setDate(todayStart.getDate() - todayStart.getDay());
+                        const weekEnd = new Date(weekStart);
+                        weekEnd.setDate(weekStart.getDate() + 6);
+                        weekEnd.setHours(23, 59, 59, 999);
+                        setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() >= weekStart && o.deliveryDate?.toDate() <= weekEnd));
+                        break;
+                    }
                 case 'thisMonthDeliveries':
-                    { const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                    monthEnd.setHours(23, 59, 59, 999);
-                    setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() >= monthStart && o.deliveryDate?.toDate() <= monthEnd));
-                    break; }
+                    {
+                        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                        monthEnd.setHours(23, 59, 59, 999);
+                        setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() >= monthStart && o.deliveryDate?.toDate() <= monthEnd));
+                        break;
+                    }
                 case 'upcoming':
                     setFilteredOrders(allOrders.filter(o => o.deliveryDate?.toDate() > todayEnd));
                     break;
@@ -186,6 +271,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* --- Stats Cards --- */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard title="Total Orders" value={stats.totalOrders} icon={<TotalOrdersIcon />} loading={loading} />
                 <StatCard title="Total Revenue" value={`₹${stats.totalRevenue.toLocaleString('en-IN')}`} icon={<RevenueIcon />} loading={loading} />
@@ -193,6 +279,32 @@ export default function Dashboard() {
                 <StatCard title="Today's Orders" value={stats.todaysOrdersCount} icon={<TodayIcon />} loading={loading} />
             </div>
 
+            {/* --- Order Graph Section --- */}
+            <div className="bg-white p-6 rounded-xl shadow-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-gray-800">Order Trends</h2>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setActiveGraph('daily')} className={`px-3 py-1 rounded-full text-sm font-semibold ${activeGraph === 'daily' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Daily</button>
+                        <button onClick={() => setActiveGraph('weekly')} className={`px-3 py-1 rounded-full text-sm font-semibold ${activeGraph === 'weekly' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Weekly</button>
+                        <button onClick={() => setActiveGraph('monthly')} className={`px-3 py-1 rounded-full text-sm font-semibold ${activeGraph === 'monthly' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Monthly</button>
+                    </div>
+                </div>
+                {loading ? (
+                    <div className="h-64 bg-gray-200 rounded-md animate-pulse"></div>
+                ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+                            <Bar dataKey="orders" fill="#F97316" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                )}
+            </div>
+
+            {/* --- Order Table Section --- */}
             <div className="bg-white p-6 rounded-xl shadow-md">
                 <div className="flex border-b border-gray-200 overflow-x-auto">
                     <TabButton title="Today's Orders" count={tabCounts.todaysOrders} isActive={activeTab === 'todaysOrders'} onClick={() => setActiveTab('todaysOrders')} />
