@@ -77,10 +77,12 @@ export default function OrdersList() {
             try {
                 const usersSnapshot = await getDocs(collection(db, 'users'));
                 const usersMap = {};
+                const usersAddress = {};
                 usersSnapshot.forEach(doc => { usersMap[doc.id] = doc.data().name || 'Unknown User'; });
+                 usersSnapshot.forEach(doc => { usersAddress[doc.id] = doc.data().address || 'Address'; });
 
                 const ordersSnapshot = await getDocs(query(collection(db, 'orders'), orderBy('orderedAt', 'desc')));
-                const ordersData = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), userName: usersMap[doc.data().userId] || 'Guest User' }));
+                const ordersData = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), userName: usersMap[doc.data().userId] || 'Guest User',userAddress: usersAddress[doc.data().userId] || 'Address' }));
                 setAllOrders(ordersData);
             } catch (err) {
                 console.error("Error fetching data:", err);
@@ -137,7 +139,7 @@ export default function OrdersList() {
     };
     
     const exportToExcel = () => {
-        const headers = ["Order ID", "Customer Name", "Product", "Order Date", "Delivery Date", "Total Price", "Payment Status", "Order Status"];
+        const headers = ["Order ID", "Customer Name", "Product", "Order Date", "Delivery Date", "Total Price", "Payment Status", "Order Status", "Address"];
         const rows = filteredOrders.map(order => [
             order.id,
             order.userName,
@@ -146,7 +148,8 @@ export default function OrdersList() {
             order.deliveryDate?.toDate().toLocaleString('en-IN') || 'N/A',
             order.totalPrice,
             order.payment,
-            order.status
+            order.status,
+            order.userAddress
         ]);
 
         let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
@@ -200,6 +203,7 @@ export default function OrdersList() {
                                 <th className="p-4 text-sm font-semibold text-gray-500">Total</th>
                                 <th className="p-4 text-sm font-semibold text-gray-500 text-center">Payment</th>
                                 <th className="p-4 text-sm font-semibold text-gray-500 text-center">Status</th>
+                                <th className="p-4 text-sm font-semibold text-gray-500">Address</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -213,6 +217,7 @@ export default function OrdersList() {
                                     <td className="p-4 font-semibold text-gray-700">₹{order.totalPrice?.toLocaleString('en-IN')}</td>
                                     <td className="p-4 text-center"><PaymentStatusBadge status={order.payment} onClick={() => handlePaymentUpdateClick(order)} /></td>
                                     <td className="p-4 text-center"><OrderStatusSelector currentStatus={order.status} onStatusChange={(newStatus) => handleStatusChange(order.id, newStatus)} /></td>
+                                     <td className="p-4 font-semibold text-gray-700">{order.userAddress}</td>
                                 </tr>
                             ))}
                         </tbody>
