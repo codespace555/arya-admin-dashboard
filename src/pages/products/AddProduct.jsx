@@ -1,7 +1,7 @@
 import { React, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase/config'; // Make sure this path is correct
+import { db } from '../../firebase/config';
 
 // --- SVG Icon Components ---
 const ArrowLeftIcon = () => <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -48,6 +48,35 @@ export default function AddProduct() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+
+    // 🔹 Upload image to Cloudinary
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setLoading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", "aryaco"); 
+
+        try {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/codespace555/image/upload`, {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            if (data.secure_url) {
+                setProduct(prev => ({ ...prev, imageUrl: data.secure_url }));
+            } else {
+                setError("Image upload failed.");
+            }
+        } catch (err) {
+            console.error("Cloudinary Upload Error: ", err);
+            setError("Failed to upload image.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -116,7 +145,11 @@ export default function AddProduct() {
 
                     <TextareaField label="Description" id="description" name="description" value={product.description} onChange={handleChange} placeholder="Describe the product..." />
 
-                    <InputField label="Image URL" id="imageUrl" name="imageUrl" type="text" value={product.imageUrl} onChange={handleChange} placeholder="https://example.com/image.jpg" />
+                    {/* 🔹 Image Upload */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Upload Image</label>
+                        <input type="file" accept="image/*" onChange={handleImageUpload} />
+                    </div>
 
                     <ToggleSwitch label="Enable Product" enabled={isEnabled} setEnabled={setIsEnabled} />
 

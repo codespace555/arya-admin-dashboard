@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase/config'; // Make sure this path is correct
+import { db } from '../../firebase/config';
 
 // --- SVG Icon Components ---
 const ArrowLeftIcon = () => <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -35,9 +35,8 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => (
     </div>
 );
 
-
 export default function EditProduct() {
-    const { productId } = useParams(); // Get the product ID from the URL
+    const { productId } = useParams();
     const [product, setProduct] = useState(null);
     const [isEnabled, setIsEnabled] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -68,6 +67,35 @@ export default function EditProduct() {
 
         fetchProduct();
     }, [productId]);
+
+    // 🔹 Upload image to Cloudinary
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setLoading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", "aryaco"); 
+
+        try {
+            const res = await fetch(`https://api.cloudinary.com/v1_1/codespace555/image/upload`, {
+                method: "POST",
+                body: formData
+            });
+            const data = await res.json();
+            if (data.secure_url) {
+                setProduct(prev => ({ ...prev, imageUrl: data.secure_url }));
+            } else {
+                setError("Image upload failed.");
+            }
+        } catch (err) {
+            console.error("Cloudinary Upload Error: ", err);
+            setError("Failed to upload image.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -145,7 +173,14 @@ export default function EditProduct() {
 
                     <TextareaField label="Description" id="description" name="description" value={product.description} onChange={handleChange} />
                     
+                    {/* 🔹 Image URL field (manual input) */}
                     <InputField label="Image URL" id="imageUrl" name="imageUrl" type="text" value={product.imageUrl} onChange={handleChange} />
+
+                    {/* 🔹 Upload new image */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Upload New Image</label>
+                        <input type="file" accept="image/*" onChange={handleImageUpload} />
+                    </div>
                     
                     <ToggleSwitch label="Enable Product" enabled={isEnabled} setEnabled={setIsEnabled} />
 
